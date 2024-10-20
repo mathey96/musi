@@ -7,12 +7,19 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 
+#define FIVE_SEC_IN_FRAME 44100 * 5
+
 ma_uint64 total_length_in_sec = 0;
 ma_uint64 total_length_in_min = 0;
 ma_uint64 total_length_in_sec_curr_min = 0;
+ma_uint64 totalFrames = 0;
+ma_uint64 cur_time;
+
 float current_bar_pos = 0;
 int curr_ms = 0;
 int curr_sec = 0;
+ma_uint64 cursor;
+
 ma_engine engine;
 
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -45,14 +52,13 @@ void display_bar(const struct ncplane* n, int length, ma_sound* sound){
 	}
 
 	float song_length = 0;
-	ma_uint64 cur_time = ma_sound_get_time_in_milliseconds(sound);
+	cur_time = ma_sound_get_time_in_milliseconds(sound);
 
 	curr_ms = cur_time % 1000;
 	curr_sec = cur_time / 1000;
-	unsigned r = 250, b = 28, g = 255;
+	unsigned r = 250, b = 125, g = 200;
 
 	current_bar_pos = ((float)curr_sec / (float)total_length_in_sec)*50; // there are 50 horizontal bar characters rendered at the end of the song
-
 
 
 	for(int i=0;i < current_bar_pos; i++){
@@ -60,12 +66,13 @@ void display_bar(const struct ncplane* n, int length, ma_sound* sound){
 		/* ncplane_putstr_yx(barplane,0,i, "hello"); */ // maybe put some time note here
 		ncplane_putwc_yx(barplane, 0, i, L'▄');
 		/* usleep(50000); */
-		r -=5;
-		/* g -=5; */
-		b -=5;
+		r -=1;
+		g -=3;
+		b -=3;
 	}
 	ncplane_printf_yx(barplane, 1,0, "%d.%d",curr_sec,curr_ms, total_length_in_sec);
-	ncplane_printf_yx(barplane, 1,47, "/%d", total_length_in_sec);
+	/* ncplane_printf_yx(barplane, 1,47, "/%d", total_length_in_sec); */
+	ncplane_printf_yx(barplane, 1,47, "/%d.%d", total_length_in_sec,total_length_in_sec%1000);
 }
 
 static void*
@@ -95,9 +102,23 @@ handle_input(void* arg){
     			ma_sound_start(&sound);
     		}
     	}
+		if(id == 'l'){
+			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
+			ma_sound_seek_to_pcm_frame(&sound, cursor + FIVE_SEC_IN_FRAME);
+		}
+		if(id == 'h'){
+			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
+			if( cursor > FIVE_SEC_IN_FRAME){
+				ma_sound_seek_to_pcm_frame(&sound, cursor - FIVE_SEC_IN_FRAME);
+			}
+			else
+				ma_sound_seek_to_pcm_frame(&sound, 0);
+		}
+		if(id == 'r'){
+			ma_sound_seek_to_pcm_frame(&sound, 0);
+		}
 
     	if(id == NCKEY_UP){
-    		fprintf(stderr,"CAOOO\n");
     		ncplane_move_rel(barplane, -1, 0);
     	}
     	if(id == NCKEY_DOWN){
@@ -178,7 +199,6 @@ int main() {
 
     /* ma_engine_play_sound(&engine, "darkorundek.mp3", NULL); */
 
-    ma_uint64 totalFrames = 0;
     result = ma_decoder_init_file("darkorundek.mp3", NULL, &decoder);
     if (result != MA_SUCCESS) {
 		fprintf(stderr,"ybg\n");
@@ -199,6 +219,8 @@ int main() {
     ma_sound_start(&sound);
 
 	while(thread_done == false){ // main loop
+
+		ncplane_erase(barplane);
 		display_bar(barplane,50,&sound);
 		notcurses_render(nc);
 	}
