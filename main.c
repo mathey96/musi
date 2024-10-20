@@ -19,6 +19,61 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
     (void)pInput;
 }
 
+struct ncplane* stdplane;
+struct ncplane* barplane;
+struct notcurses* nc;
+
+bool thread_done = false;
+
+int paused = 0;
+ma_sound sound;
+
+static void*
+handle_input(void* arg){
+	ncinput ni;
+	struct notcurses* nc = (struct notcurses*)arg;
+	uint32_t id;
+
+	while((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1){
+		if(id == 0){
+			continue;
+		}
+		if(id == 'q'){
+			thread_done = true;
+			pthread_exit(NULL);
+			break;
+		}
+		if(id == ' '){
+			if (paused == false){
+				paused = true;
+				ma_sound_stop(&sound);
+			}
+			else {
+				paused = false;
+				ma_sound_start(&sound);
+			}
+		}
+
+		if(id == NCKEY_UP){
+			fprintf(stderr,"CAOOO\n");
+			ncplane_move_rel(barplane, -1, 0);
+		}
+		if(id == NCKEY_DOWN){
+			ncplane_move_rel(barplane, 1, 0);
+		}
+		if(id == NCKEY_LEFT){
+			ncplane_move_rel(barplane, 0, -1);
+		}
+		if(id == NCKEY_RIGHT){
+			ncplane_move_rel(barplane, 0, 1);
+		}
+		}
+	return NULL;
+}
+
+static pthread_t thread_id_input;
+
+
 int main() {
 
  	struct notcurses_options opts = {0}; // man notcurses_init(3)
@@ -46,7 +101,6 @@ int main() {
     ma_device_config deviceConfig;
     ma_device device;
     ma_result result;
-    ma_sound sound;
 
     // Initialize the Miniaudio device configuration
     deviceConfig = ma_device_config_init(ma_device_type_playback);
@@ -84,8 +138,22 @@ int main() {
 	if (result != MA_SUCCESS) {
         return result;
     }
+	if(pthread_create(&thread_id_input, NULL, &handle_input, nc)){
+		exit(-1);
+		return -1;
+	}
 
     ma_sound_start(&sound);
+
+	while(thread_done == false){ // main loop
+
+	}
+
+	if(pthread_join(thread_id_input, NULL) == 0){
+		notcurses_stop(nc);
+		return 1;
+	}
+    ma_sound_stop(&sound);
 
     // Stop and uninitialize the audio device
     ma_device_stop(&device);

@@ -21,7 +21,7 @@ add_executable(release ${SOURCES_TARGET1})
 add_executable(debug ${SOURCES_TARGET2})
 
 target_precompile_headers(release PRIVATE miniaudio.h)
-target_precompile_headers(release PRIVATE miniaudio.h)
+target_precompile_headers(debug PRIVATE miniaudio.h)
 
 # Add include directories common to both targets
 include_directories(
@@ -32,8 +32,6 @@ include_directories(
 target_link_libraries(release
     -pthread
     -lm
-    -lnotcurses
-    -lnotcurses-core
     -lnotcurses
     -lnotcurses-core
 #    -lunistring
