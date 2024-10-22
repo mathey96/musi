@@ -36,12 +36,16 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 
 struct ncplane* stdplane;
 struct ncplane* barplane;
+struct ncplane* barsplane;
 struct notcurses* nc;
 
 bool thread_done = false;
 
 int paused = 0;
 ma_sound sound;
+
+int animation_on = 1;
+static pthread_mutex_t mutex_erase = PTHREAD_MUTEX_INITIALIZER;
 
 void display_bar(const struct ncplane* n, int length, ma_sound* sound){
 	const nccell c;
@@ -76,35 +80,91 @@ void display_bar(const struct ncplane* n, int length, ma_sound* sound){
 }
 
 static void*
-handle_input(void* arg){
-
-    ncinput ni;
+display_bars(void* arg){
     struct notcurses* nc = (struct notcurses*)arg;
-    uint32_t id;
+	const nccell c;
+	nccell_load(barsplane, &c, "h");
 
-    while((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1){
-    	if(id == 0){
-    		continue;
-    	}
-    	if(id == 'q'){
-    		thread_done = true;
-    		ma_sound_stop(&sound);
-    		pthread_exit(NULL);
-    		break;
-    	}
-    	if(id == ' '){
-    		if (paused == false){
-    			paused = true;
-    			ma_sound_stop(&sound);
-    		}
-    		else {
-    			paused = false;
-    			ma_sound_start(&sound);
-    		}
-    	}
+	int i = 4;
+
+	unsigned r = 250, b = 125, g = 200;
+	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+
+	while(animation_on){
+
+		while(paused == false){
+
+			if(i == 4){
+				r = 250, b = 125, g = 200; //reset to default after every loop
+				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+			}
+
+			i--;
+			usleep(200000);
+			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
+			fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b);
+			ncplane_putwc_yx(barsplane, i + 1, 0, L'▄');
+			r -=20; g -=35; b -=35;
+			}
+			if(i > 1){
+				r -=10; g -=25; b -=25;
+				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+				usleep(200000);
+			if(paused == false)
+				ncplane_putwc_yx(barsplane, i + 1, 2, L'▄');
+			}
+			if(i > 2){
+				r -=20; g -=35; b -=35;
+				usleep(200000);
+				if(paused == false)
+				ncplane_putwc_yx(barsplane, i + 1, 4, L'▄');
+				fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b);
+			}
+			if(i == 0){
+				i = 4;
+				/* pthread_mutex_lock(&mutex_erase); */
+				ncplane_erase(barsplane);
+				/* pthread_mutex_unlock(&mutex_erase); */
+			}
+
+		}
+	}
+	pthread_exit(NULL);
+}
+
+static void*
+handle_input(void* arg){
+	ncinput ni;
+    struct notcurses* nc = (struct notcurses*)arg;
+	uint32_t id;
+
+	while((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1){
+		if(id == 0){
+			continue;
+		}
+		if(id == 'q'){
+			thread_done = true;
+			pthread_exit(NULL);
+			break;
+		}
+		if(id == ' '){
+			if (paused == false){
+				paused = true;
+				/* pthread_mutex_lock(&mutex_erase); */
+				ncplane_erase(barsplane);
+				/* pthread_mutex_unlock(&mutex_erase); */
+				ma_sound_stop(&sound);
+			}
+			else {
+				paused = false;
+				ncplane_erase(barsplane);
+				ncplane_erase(barplane);
+				ma_sound_start(&sound);
+			}
+		}
 		if(id == 'l'){
 			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
-			ma_sound_seek_to_pcm_frame(&sound, cursor + FIVE_SEC_IN_FRAME);
+				ma_sound_seek_to_pcm_frame(&sound, cursor + FIVE_SEC_IN_FRAME);
 		}
 		if(id == 'h'){
 			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
@@ -118,23 +178,24 @@ handle_input(void* arg){
 			ma_sound_seek_to_pcm_frame(&sound, 0);
 		}
 
-    	if(id == NCKEY_UP){
-    		ncplane_move_rel(barplane, -1, 0);
-    	}
-    	if(id == NCKEY_DOWN){
-    		ncplane_move_rel(barplane, 1, 0);
-    	}
-    	if(id == NCKEY_LEFT){
-    		ncplane_move_rel(barplane, 0, -1);
-    	}
-    	if(id == NCKEY_RIGHT){
-    		ncplane_move_rel(barplane, 0, 1);
-    	}
+		if(id == NCKEY_UP){
+			ncplane_move_rel(barplane, -1, 0);
+		}
+		if(id == NCKEY_DOWN){
+			ncplane_move_rel(barplane, 1, 0);
+		}
+		if(id == NCKEY_LEFT){
+			ncplane_move_rel(barplane, 0, -1);
+		}
+		if(id == NCKEY_RIGHT){
+			ncplane_move_rel(barplane, 0, 1);
+		}
 	}
-return NULL;
+	return NULL;
 }
 
 static pthread_t thread_id_input;
+static pthread_t bars_animation;
 const uint64_t sec = 5;
 
 
@@ -159,7 +220,21 @@ int main() {
     	.margin_b = 0,
     	.margin_r = 0,
     };
+
+	struct ncplane_options nopts2 = {
+		.y = ystd/3 -4,
+		.x = xstd/3 +1,
+		.rows = 5,
+		.cols = 5,
+		.name = "plot",
+		/* .resizecb = resize_cb, */
+		/* .flags = NCPLANE_OPTION_FIXED, */
+		.margin_b = 0,
+		.margin_r = 0,
+	};
+
     barplane = ncplane_create(stdplane, &nopts);
+	barsplane = ncplane_create(stdplane, &nopts2);
 
     ma_device_config deviceConfig;
     ma_device device;
@@ -212,6 +287,10 @@ int main() {
         return result;
     }
     if(pthread_create(&thread_id_input, NULL, &handle_input, nc)){
+		exit(-1);
+		return -1;
+	}
+    if(pthread_create(&bars_animation, NULL, &display_bars, nc)){
 		exit(-1);
 		return -1;
 	}
