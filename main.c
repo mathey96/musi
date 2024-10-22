@@ -20,6 +20,14 @@ int curr_ms = 0;
 int curr_sec = 0;
 ma_uint64 cursor;
 
+typedef enum{
+	PROGRESS_BAR = 0,
+	HELP
+} display_status;
+
+
+int display_state = PROGRESS_BAR;
+
 ma_engine engine;
 
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -102,7 +110,6 @@ display_bars(void* arg){
 			i--;
 			usleep(200000);
 			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
-			fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b);
 			ncplane_putwc_yx(barsplane, i + 1, 0, L'▄');
 			r -=20; g -=35; b -=35;
 			}
@@ -118,7 +125,6 @@ display_bars(void* arg){
 				usleep(200000);
 				if(paused == false)
 				ncplane_putwc_yx(barsplane, i + 1, 4, L'▄');
-				fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b);
 			}
 			if(i == 0){
 				i = 4;
@@ -162,11 +168,11 @@ handle_input(void* arg){
 				ma_sound_start(&sound);
 			}
 		}
-		if(id == 'l'){
+		if(id == 'k'){
 			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
 				ma_sound_seek_to_pcm_frame(&sound, cursor + FIVE_SEC_IN_FRAME);
 		}
-		if(id == 'h'){
+		if(id == 'j'){
 			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
 			if( cursor > FIVE_SEC_IN_FRAME){
 				ma_sound_seek_to_pcm_frame(&sound, cursor - FIVE_SEC_IN_FRAME);
@@ -177,30 +183,66 @@ handle_input(void* arg){
 		if(id == 'r'){
 			ma_sound_seek_to_pcm_frame(&sound, 0);
 		}
-
-		if(id == NCKEY_UP){
-			ncplane_move_rel(barplane, -1, 0);
+		if(id == 'h'){
+			if(display_state == HELP)
+				display_state = PROGRESS_BAR;
+			else if(display_state == PROGRESS_BAR)
+				display_state = HELP;
 		}
-		if(id == NCKEY_DOWN){
-			ncplane_move_rel(barplane, 1, 0);
-		}
-		if(id == NCKEY_LEFT){
-			ncplane_move_rel(barplane, 0, -1);
-		}
-		if(id == NCKEY_RIGHT){
-			ncplane_move_rel(barplane, 0, 1);
-		}
+			/* switch(display_state){ */
+			/* 	case PROGRESS_BAR: display_state = HELP; */
+			/* 	case HELP: display_state = PROGRESS_BAR; */
+			/* } */
+		/* } */
 	}
 	return NULL;
 }
+
+void display_help(struct ncplane* plane){
+	ncplane_putstr_yx(plane, 1, 1, "k - skip 5 sec forward");
+	ncplane_putstr_yx(plane, 2, 1, "j - skip 5 sec backward");
+	ncplane_putstr_yx(plane, 3, 1, "r - restart audio");
+	ncplane_putstr_yx(plane, 4, 1, "SPC - pause");
+	ncplane_putstr_yx(plane, 5, 1, "h - display help");
+	ncplane_putstr_yx(plane, 6, 1, "q - exit application");
+};
 
 static pthread_t thread_id_input;
 static pthread_t bars_animation;
 const uint64_t sec = 5;
 
+int ystd = 0, xstd = 0;
 
-int main() {
+int resize_cb(struct ncplane* plane){
+	notcurses_stddim_yx(nc, &ystd, &xstd);
+	int x_center = xstd/3 ;
+	int y_center = ystd/3 + 1;
+	int y_center_barsplane = ystd/3 - 4;
+	if( ystd > 15 && xstd > 70){
+		ncplane_move_yx(barplane, y_center, x_center);
+		ncplane_move_yx(barsplane, y_center_barsplane, x_center);
+	}
+	if(xstd < 70 ){
+		ncplane_move_yx(barplane,  y_center, 0);
+		ncplane_move_yx(barsplane, y_center_barsplane, 0);
+	}
+	if( ystd < 15 && xstd > 70){
+		ncplane_move_yx(barplane,  0, x_center);
+		ncplane_move_yx(barsplane, 0, x_center);
+	}
+	if( ystd < 15 && xstd < 70){
+		ncplane_move_yx(plane, 0, 0);
+		ncplane_move_yx(plane, 0, 0);
+	}
+	return 0;
+}
+
+int main(int argc, const char* argv[]) {
     struct notcurses_options opts = {0}; // man notcurses_init(3)
+	if(argc < 2){
+		fprintf(stderr,"provide an input file\n");
+		exit(-1);
+		}
     nc = notcurses_init(&opts, stdout);
     if(nc == NULL){
     	return EXIT_FAILURE;
@@ -215,7 +257,7 @@ int main() {
     	.rows = 150,
     	.cols = 150,
     	.name = "plot",
-    	/* .resizecb = resize_cb, */
+    	.resizecb = resize_cb,
     	/* .flags = NCPLANE_OPTION_FIXED, */
     	.margin_b = 0,
     	.margin_r = 0,
@@ -227,7 +269,7 @@ int main() {
 		.rows = 5,
 		.cols = 5,
 		.name = "plot",
-		/* .resizecb = resize_cb, */
+		.resizecb = resize_cb,
 		/* .flags = NCPLANE_OPTION_FIXED, */
 		.margin_b = 0,
 		.margin_r = 0,
@@ -274,14 +316,14 @@ int main() {
 
     /* ma_engine_play_sound(&engine, "darkorundek.mp3", NULL); */
 
-    result = ma_decoder_init_file("darkorundek.mp3", NULL, &decoder);
+    result = ma_decoder_init_file(argv[1], NULL, &decoder);
     if (result != MA_SUCCESS) {
 		fprintf(stderr,"ybg\n");
         return false;   // An error occurred.
     }
 	ma_decoder_get_length_in_pcm_frames(&decoder,&totalFrames);
 	total_length_in_sec = (ma_uint64) totalFrames / 44100;
-    result = ma_sound_init_from_file(&engine, "darkorundek.mp3", MA_SOUND_FLAG_DECODE, NULL, NULL, &sound);
+    result = ma_sound_init_from_file(&engine, argv[1], MA_SOUND_FLAG_DECODE, NULL, NULL, &sound);
 
     if (result != MA_SUCCESS) {
         return result;
@@ -297,15 +339,23 @@ int main() {
 
     ma_sound_start(&sound);
 
-	while(thread_done == false){ // main loop
-
+	while(thread_done == false){
 		ncplane_erase(barplane);
-		display_bar(barplane,50,&sound);
+		if(display_state == PROGRESS_BAR){
+			display_bar(barplane, 50, &sound);
+			}
+		if(display_state == HELP){
+			ncplane_erase(barplane);
+			display_help(barplane);
+		}
 		notcurses_render(nc);
 	}
 
 	if(pthread_join(thread_id_input, NULL) == 0){
 		notcurses_stop(nc);
+		return 1;
+	}
+    if(pthread_join(bars_animation, NULL) == 0){
 		return 1;
 	}
 
