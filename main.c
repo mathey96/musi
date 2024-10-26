@@ -8,7 +8,6 @@
 #include "miniaudio.h"
 #include "animations.h"
 
-
 #define FIVE_SEC_IN_FRAME 44100 * 5
 
 ma_uint64 total_length_in_sec = 0;
@@ -26,7 +25,6 @@ typedef enum{
 	PROGRESS_BAR = 0,
 	HELP
 } display_status;
-
 
 int display_state = PROGRESS_BAR;
 
@@ -55,6 +53,10 @@ int paused = 0;
 ma_sound sound;
 
 int animation_on = 1;
+static pthread_t thread_id_input;
+static pthread_t thread_animation;
+int cur_animation_thread = 0;
+
 
 void
 display_bar(struct ncplane* n, ma_sound* sound){
@@ -78,18 +80,26 @@ display_bar(struct ncplane* n, ma_sound* sound){
 		ncplane_printf_yx(barplane	, 1,47, "%lld.%lld" ,total_length_in_sec ,total_length_in_sec%1000);
 }
 
-
 static void*
 handle_input(void* arg){
 	ncinput ni;
     struct notcurses* nc = (struct notcurses*)arg;
 	uint32_t id;
 
+    if(pthread_create(&thread_animation, NULL, animation[0], nc) != 0){
+		exit(-1);
+	}
+
 	while((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1){
 		if(id == 0){
 			continue;
 		}
 		if(id == 'q'){
+			animation_on = 0;
+			if(pthread_join(thread_animation, NULL) != 0){
+				fprintf(stderr, "unsuccessful exit from animation thread\n");
+				exit(-1);
+			}
 			thread_done = true;
 			pthread_exit(NULL);
 			break;
@@ -122,17 +132,30 @@ handle_input(void* arg){
 		if(id == 'r'){
 			ma_sound_seek_to_pcm_frame(&sound, 0);
 		}
-		if(id == 'h'){
-			if(display_state == HELP)
-				display_state = PROGRESS_BAR;
-			else if(display_state == PROGRESS_BAR)
-				display_state = HELP;
+		if(id == 'a'){
+			if(cur_animation_thread < NUM_OF_ANIMATIONS)
+				cur_animation_thread ++;
+			if(cur_animation_thread == NUM_OF_ANIMATIONS) cur_animation_thread = 0;
+			animation_on = 0;
+			if(pthread_join(thread_animation, NULL) != 0){
+				notcurses_stop(nc);
+			}
+			animation_on = 1;
+			if(pthread_create(&thread_animation, NULL, animation[cur_animation_thread], nc)){
+				exit(-1);
+			}
 		}
-			/* switch(display_state){ */
-			/* 	case PROGRESS_BAR: display_state = HELP; */
-			/* 	case HELP: display_state = PROGRESS_BAR; */
-			/* } */
+		if(id == 'h'){
+		/* 	if(display_state == HELP) */
+		/* 		display_state = PROGRESS_BAR; */
+		/* 	else if(display_state == PROGRESS_BAR) */
+		/* 		display_state = HELP; */
 		/* } */
+			switch(display_state){
+				case PROGRESS_BAR: display_state = HELP;
+				case HELP: display_state = PROGRESS_BAR;
+			}
+		}
 	}
 	return NULL;
 }
@@ -141,13 +164,11 @@ void display_help(struct ncplane* plane){
 	ncplane_putstr_yx(plane, 1, 1, "k - skip 5 sec forward");
 	ncplane_putstr_yx(plane, 2, 1, "j - skip 5 sec backward");
 	ncplane_putstr_yx(plane, 3, 1, "r - restart audio");
-	ncplane_putstr_yx(plane, 4, 1, "SPC - pause");
-	ncplane_putstr_yx(plane, 5, 1, "h - display help");
-	ncplane_putstr_yx(plane, 6, 1, "q - exit application");
+	ncplane_putstr_yx(plane, 4, 1, "a - change animation style");
+	ncplane_putstr_yx(plane, 5, 1, "SPC - pause");
+	ncplane_putstr_yx(plane, 6, 1, "h - display help");
+	ncplane_putstr_yx(plane, 7, 1, "q - exit application");
 };
-
-static pthread_t thread_id_input;
-static pthread_t bars_animation;
 
 int resize_cb(struct ncplane* plane){
 	notcurses_stddim_yx(nc, &ystd, &xstd);
@@ -219,8 +240,6 @@ int main(int argc, const char* argv[]) {
     ma_result result;
     ma_decoder decoder;
 
-    time_t start_time = time(NULL);
-
     // Initialize the Miniaudio device configuration
     deviceConfig = ma_device_config_init(ma_device_type_playback);
     deviceConfig.playback.format   = ma_format_f32;
@@ -268,11 +287,6 @@ int main(int argc, const char* argv[]) {
 		exit(-1);
 		return -1;
 	}
-    if(pthread_create(&bars_animation, NULL, &animation_sine, nc)){
-		exit(-1);
-		return -1;
-	}
-
     ma_sound_start(&sound);
 
 	while(thread_done == false){
@@ -289,9 +303,6 @@ int main(int argc, const char* argv[]) {
 
 	if(pthread_join(thread_id_input, NULL) == 0){
 		notcurses_stop(nc);
-		return 1;
-	}
-    if(pthread_join(bars_animation, NULL) == 0){
 		return 1;
 	}
 

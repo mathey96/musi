@@ -8,7 +8,6 @@ animation_sine(void* ){
 	unsigned r = 250, b = 125, g = 200;
 	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 
-	while(animation_on == 1){
 
 		while(animation_on == 1){
 			int row = 0;
@@ -35,14 +34,12 @@ animation_sine(void* ){
 		}
 	}
 	pthread_exit(NULL);
-	}
 }
 
 void*
 animation_bars(void* ){
 
 	int i = 4;
-
 
 	unsigned r = 250, b = 125, g = 200;
 	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
@@ -89,6 +86,7 @@ animation_bars(void* ){
 
 			}
 		}
+		pthread_exit(NULL);
 	}
 }
 
