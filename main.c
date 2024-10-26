@@ -14,11 +14,11 @@ ma_uint64 total_length_in_min = 0;
 ma_uint64 total_length_in_sec_curr_min = 0;
 ma_uint64 totalFrames = 0;
 ma_uint64 cur_time;
-
 float current_bar_pos = 0;
 int curr_ms = 0;
-int curr_sec = 0;
+ma_uint64 curr_sec = 0;
 ma_uint64 cursor;
+int ystd = 0, xstd = 0;
 
 typedef enum{
 	PROGRESS_BAR = 0,
@@ -53,48 +53,33 @@ int paused = 0;
 ma_sound sound;
 
 int animation_on = 1;
-static pthread_mutex_t mutex_erase = PTHREAD_MUTEX_INITIALIZER;
 
-void display_bar(const struct ncplane* n, int length, ma_sound* sound){
-	const nccell c;
-	nccell_load(barplane, &c, "h");
+void
+display_bar(struct ncplane* n, ma_sound* sound){
 
-	if(nccell_wide_right_p(&c)){ // not really a character
-		return;
-	}
-
-	float song_length = 0;
+	unsigned r = 250, b = 125, g = 200;
 	cur_time = ma_sound_get_time_in_milliseconds(sound);
 
 	curr_ms = cur_time % 1000;
 	curr_sec = cur_time / 1000;
-	unsigned r = 250, b = 125, g = 200;
 
 	current_bar_pos = ((float)curr_sec / (float)total_length_in_sec)*50; // there are 50 horizontal bar characters rendered at the end of the song
 
-
-	for(int i=0;i < current_bar_pos; i++){
-		ncplane_set_fg_rgb8_clipped(n, r, g, b);
-		/* ncplane_putstr_yx(barplane,0,i, "hello"); */ // maybe put some time note here
-		ncplane_putwc_yx(barplane, 0, i, L'▄');
-		/* usleep(50000); */
-		r -=1;
-		g -=3;
-		b -=3;
-	}
-	ncplane_printf_yx(barplane, 1,0, "%d.%d",curr_sec,curr_ms, total_length_in_sec);
-	/* ncplane_printf_yx(barplane, 1,47, "/%d", total_length_in_sec); */
-	ncplane_printf_yx(barplane, 1,47, "/%d.%d", total_length_in_sec,total_length_in_sec%1000);
+		for(int i=0;i < current_bar_pos; i++){
+			ncplane_set_fg_rgb8_clipped(n, r, g, b);
+			ncplane_putwc_yx(barplane, 0, i, L'▄');
+			r -=1;
+			g -=3;
+			b -=3;
+		}
+		ncplane_printf_yx(barplane	, 1, 0, "%lld.%d" ,curr_sec,curr_ms);
+		ncplane_printf_yx(barplane	, 1,47, "%lld.%lld" ,total_length_in_sec ,total_length_in_sec%1000);
 }
 
 static void*
-animation_bars(void* arg){
-    struct notcurses* nc = (struct notcurses*)arg;
-	const nccell c;
-	nccell_load(barsplane, &c, "h");
+animation_bars(void* ){
 
 	int i = 4;
-
 	unsigned r = 250, b = 125, g = 200;
 	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 
@@ -106,7 +91,6 @@ animation_bars(void* arg){
 				r = 250, b = 125, g = 200; //reset to default after every loop
 				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 			}
-
 			i--;
 			usleep(200000);
 			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
@@ -128,11 +112,8 @@ animation_bars(void* arg){
 			}
 			if(i == 0){
 				i = 4;
-				/* pthread_mutex_lock(&mutex_erase); */
 				ncplane_erase(barsplane);
-				/* pthread_mutex_unlock(&mutex_erase); */
 			}
-
 		}
 	}
 	pthread_exit(NULL);
@@ -167,11 +148,7 @@ draw_sine_bar(double* amplitude,int row){
 
 
 static void*
-animation_sine(void* arg){
-    struct notcurses* nc = (struct notcurses*)arg;
-	const nccell c;
-	nccell_load(barsplane, &c, "h");
-
+animation_sine(void* ){
 
 	unsigned r = 250, b = 125, g = 200;
 	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
@@ -183,7 +160,7 @@ animation_sine(void* arg){
 			r = 250, b = 125, g = 200; //reset to default after every loop
 			ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
-				/* fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b); */
+			/* fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b); */
 				for(row = 0; row < 50;){
 					double sin_amp = sin((double)row*7.2);
 					draw_sine_bar(&sin_amp, row);
@@ -194,58 +171,6 @@ animation_sine(void* arg){
 					usleep(200000);
 					row = row + 2;
 				}
-				ncplane_erase(barsplane);
-				/* pthread_mutex_unlock(&mutex_erase); */
-			}
-		}
-	}
-	pthread_exit(NULL);
-}
-
-static void*
-animation_bars(void* arg){
-    struct notcurses* nc = (struct notcurses*)arg;
-	const nccell c;
-	nccell_load(barsplane, &c, "h");
-
-	int i = 4;
-
-
-	unsigned r = 250, b = 125, g = 200;
-	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-
-	while(animation_on){
-
-		while(paused == false){
-
-			if(i == 4){
-				r = 250, b = 125, g = 200; //reset to default after every loop
-				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-			}
-			i--;
-			usleep(200000);
-			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
-			/* fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b); */
-			ncplane_putwc_yx(barsplane, i + 1, 0, L'▄');
-			r -=20; g -=35; b -=35;
-			}
-			if(i > 1){
-				r -=10; g -=25; b -=25;
-				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-				usleep(200000);
-			if(paused == false)
-				ncplane_putwc_yx(barsplane, i + 1, 2, L'▄');
-			}
-			if(i > 2){
-				r -=20; g -=35; b -=35;
-				usleep(200000);
-				if(paused == false)
-				ncplane_putwc_yx(barsplane, i + 1, 4, L'▄');
-				/* fprintf(stderr,"r: %d, g: %d, b: %d\n",r,g,b); */
-			}
-			if(i == 0){
-				i = 4;
-				/* pthread_mutex_lock(&mutex_erase); */
 				ncplane_erase(barsplane);
 				/* pthread_mutex_unlock(&mutex_erase); */
 			}
@@ -272,9 +197,7 @@ handle_input(void* arg){
 		if(id == ' '){
 			if (paused == false){
 				paused = true;
-				/* pthread_mutex_lock(&mutex_erase); */
 				ncplane_erase(barsplane);
-				/* pthread_mutex_unlock(&mutex_erase); */
 				ma_sound_stop(&sound);
 			}
 			else {
@@ -325,9 +248,6 @@ void display_help(struct ncplane* plane){
 
 static pthread_t thread_id_input;
 static pthread_t bars_animation;
-const uint64_t sec = 5;
-
-int ystd = 0, xstd = 0;
 
 int resize_cb(struct ncplane* plane){
 	notcurses_stddim_yx(nc, &ystd, &xstd);
@@ -458,7 +378,7 @@ int main(int argc, const char* argv[]) {
 	while(thread_done == false){
 		ncplane_erase(barplane);
 		if(display_state == PROGRESS_BAR){
-			display_bar(barplane, 50, &sound);
+			display_bar(barplane, &sound);
 			}
 		if(display_state == HELP){
 			ncplane_erase(barplane);
