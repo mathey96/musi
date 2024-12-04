@@ -7,8 +7,11 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 #include "animations.h"
+/* #include "fft.h" */
 
 #define FIVE_SEC_IN_FRAME 44100 * 5
+#define Q_FFT 11
+#define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
 ma_uint64 total_length_in_sec = 0;
 ma_uint64 total_length_in_min = 0;
@@ -30,17 +33,38 @@ int display_state = PROGRESS_BAR;
 
 ma_engine engine;
 
-void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
-{
-    ma_decoder* pDecoder = (ma_decoder*)pDevice->pUserData;
-    if (pDecoder == NULL) {
-        return;
-    }
 
-    ma_decoder_read_pcm_frames(pDecoder, pOutput, frameCount, NULL);
+typedef struct {
+    int16_t L;
+    int16_t R;
+} sample_16b_2ch_t;
 
-    (void)pInput;
-}
+typedef struct {
+    uint16_t audioFormat;
+    uint16_t numChannels;
+    uint32_t sampleRate;
+    uint32_t byteRate;    // Bytes per second
+    uint16_t blockAlign;  // Bytes per sample, bitePerSample * numChannels / 8
+    uint16_t bitsPerSample;
+    uint32_t dataSize;
+    ma_uint64 numSamples;
+    sample_16b_2ch_t* sample;
+} wav_t; // struct and some code in this commit is taken from https://github.com/RoboBachelor/Music-Visualizer-Piano
+
+#define Q_FFT 11
+#define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
+
+float complex values[N_FFT] = { 0.0f + 0.0f * I };  // Initialize complex array
+
+
+bool freeMode = false;
+sample_16b_2ch_t* playerBuf;
+int32_t playerBufLen;
+int32_t playerBufIndex = 0;
+
+uint32_t sampleIndex = 0;
+wav_t wav;
+
 
 struct ncplane* stdplane;
 struct ncplane* barplane;
@@ -57,6 +81,11 @@ static pthread_t thread_id_input;
 static pthread_t thread_animation;
 int cur_animation_thread = 0;
 
+void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
+{
+	memcpy(pOutput, &wav.sample[sampleIndex], (size_t)frameCount * wav.blockAlign);
+	sampleIndex += frameCount;
+}
 
 void
 display_bar(struct ncplane* n, ma_sound* sound){
@@ -194,6 +223,21 @@ int resize_cb(struct ncplane* plane){
 	return 0;
 }
 
+
+void update_vars(){
+	for (int32_t i = 0; i < N_FFT; ++i) {
+		if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){
+			values[i] = wav.sample[i + sampleIndex].L / 32768.f ;
+			fprintf(stderr,"values[i]: %d\n", wav.sample[i+sampleIndex].L);
+		}
+		else{
+			values[i] = 0;
+			fprintf(stderr,"else values[i]: %d\n", values[i]);
+		}
+	}
+	/* fft(values,1,out N_FFT); */
+}
+
 int main(int argc, const char* argv[]) {
     struct notcurses_options opts = {0}; // man notcurses_init(3)
 	if(argc < 2){
@@ -235,17 +279,45 @@ int main(int argc, const char* argv[]) {
     barplane = ncplane_create(stdplane, &nopts);
 	barsplane = ncplane_create(stdplane, &nopts2);
 
+	wav.sampleRate = 48000;
+	wav.blockAlign = 4;
+	char musicPath[200] = { "The Music Visualizer - Free Mode" };
+
+	if (argc > 1) {
+		strcpy(musicPath, argv[1]);
+	}
+
     ma_device_config deviceConfig;
     ma_device device;
     ma_result result;
-    ma_decoder decoder;
+	ma_decoder decoder;
+	ma_decoder_config decoderConfig = ma_decoder_config_init(ma_format_s16, 2, 0);
+	if (ma_decoder_init_file(musicPath, &decoderConfig, &decoder) != MA_SUCCESS) {
+		printf("Can not open wav music file: %s\n", musicPath);
+	}
+	else {
+		wav.sampleRate = decoder.outputSampleRate;
+		ma_decoder_get_length_in_pcm_frames(&decoder, &wav.numSamples);
+		wav.sample = (sample_16b_2ch_t*) malloc(sizeof(sample_16b_2ch_t)*wav.numSamples);
+		ma_uint64 framesread = 0;
+		ma_decoder_read_pcm_frames(&decoder, wav.sample, wav.numSamples, &framesread);
+	}
+
+	ma_decoder_get_length_in_pcm_frames(&decoder,&totalFrames);
+	ma_decoder_uninit(&decoder);
+
+
+	playerBufLen = wav.sampleRate * 6;
+	playerBuf = (sample_16b_2ch_t*) malloc(sizeof(sample_16b_2ch_t)*playerBufLen);
+	memset(playerBuf, 0, (size_t)playerBufLen * wav.blockAlign);
 
     // Initialize the Miniaudio device configuration
     deviceConfig = ma_device_config_init(ma_device_type_playback);
-    deviceConfig.playback.format   = ma_format_f32;
-    deviceConfig.playback.channels = 2; // Stereo
-    deviceConfig.sampleRate        = 44100;
+    deviceConfig.playback.format   = ma_format_s16;
+    deviceConfig.playback.channels = wav.numChannels; // Stereo
+    deviceConfig.sampleRate        = wav.sampleRate;
     deviceConfig.dataCallback      = data_callback;
+	deviceConfig.pUserData = &wav;
 
     // Initialize the audio device
     result = ma_device_init(NULL, &deviceConfig, &device);
@@ -264,6 +336,19 @@ int main(int argc, const char* argv[]) {
 
     ma_engine_config engineConfig;
 
+	/* while(1){ */
+	/* for (int32_t i = 0; i < N_FFT; ++i) { */
+	/* 	if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){ */
+	/* 		values[i] = wav.sample[i + sampleIndex].L / 32768.f ; */
+	/* 		fprintf(stderr,"values[i]: %d\n", wav.sample[i+sampleIndex].L); */
+	/* 	} */
+	/* 	else{ */
+	/* 		values[i] = 0; */
+	/* 		fprintf(stderr,"else values[i]: %d\n", values[i]); */
+	/* 	} */
+	/* } */
+	/* } */
+
 
     engineConfig = ma_engine_config_init();
     /* engineConfig.pResourceManager = &myCustomResourceManager;   // <-- Initialized as some earlier stage. */
@@ -271,12 +356,6 @@ int main(int argc, const char* argv[]) {
 
     /* ma_engine_play_sound(&engine, "darkorundek.mp3", NULL); */
 
-    result = ma_decoder_init_file(argv[1], NULL, &decoder);
-    if (result != MA_SUCCESS) {
-		fprintf(stderr,"ybg\n");
-        return false;   // An error occurred.
-    }
-	ma_decoder_get_length_in_pcm_frames(&decoder,&totalFrames);
 	total_length_in_sec = (ma_uint64) totalFrames / 44100;
     result = ma_sound_init_from_file(&engine, argv[1], MA_SOUND_FLAG_DECODE, NULL, NULL, &sound);
 
@@ -287,10 +366,10 @@ int main(int argc, const char* argv[]) {
 		exit(-1);
 		return -1;
 	}
-    ma_sound_start(&sound);
 
 	while(thread_done == false){
 		ncplane_erase(barplane);
+		update_vars();
 		if(display_state == PROGRESS_BAR){
 			display_bar(barplane, &sound);
 			}
