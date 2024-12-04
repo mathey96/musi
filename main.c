@@ -7,10 +7,10 @@
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 #include "animations.h"
-/* #include "fft.h" */
+#include "fft.h"
 
 #define FIVE_SEC_IN_FRAME 44100 * 5
-#define Q_FFT 11
+#define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
 ma_uint64 total_length_in_sec = 0;
@@ -24,6 +24,10 @@ ma_uint64 curr_sec = 0;
 ma_uint64 cursor;
 int ystd = 0, xstd = 0;
 
+float in[N_FFT];
+float complex out[N_FFT];
+float amps[50];
+
 typedef enum{
 	PROGRESS_BAR = 0,
 	HELP
@@ -33,29 +37,10 @@ int display_state = PROGRESS_BAR;
 
 ma_engine engine;
 
-
-typedef struct {
-    int16_t L;
-    int16_t R;
-} sample_16b_2ch_t;
-
-typedef struct {
-    uint16_t audioFormat;
-    uint16_t numChannels;
-    uint32_t sampleRate;
-    uint32_t byteRate;    // Bytes per second
-    uint16_t blockAlign;  // Bytes per sample, bitePerSample * numChannels / 8
-    uint16_t bitsPerSample;
-    uint32_t dataSize;
-    ma_uint64 numSamples;
-    sample_16b_2ch_t* sample;
-} wav_t; // struct and some code in this commit is taken from https://github.com/RoboBachelor/Music-Visualizer-Piano
-
-#define Q_FFT 11
+#define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
-float complex values[N_FFT] = { 0.0f + 0.0f * I };  // Initialize complex array
-
+float values[N_FFT];  // Initialize complex array
 
 bool freeMode = false;
 sample_16b_2ch_t* playerBuf;
@@ -223,20 +208,6 @@ int resize_cb(struct ncplane* plane){
 	return 0;
 }
 
-
-void update_vars(){
-	for (int32_t i = 0; i < N_FFT; ++i) {
-		if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){
-			values[i] = wav.sample[i + sampleIndex].L / 32768.f ;
-			fprintf(stderr,"values[i]: %d\n", wav.sample[i+sampleIndex].L);
-		}
-		else{
-			values[i] = 0;
-			fprintf(stderr,"else values[i]: %d\n", values[i]);
-		}
-	}
-	/* fft(values,1,out N_FFT); */
-}
 
 int main(int argc, const char* argv[]) {
     struct notcurses_options opts = {0}; // man notcurses_init(3)

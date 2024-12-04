@@ -9,13 +9,13 @@ set(CMAKE_C_STANDARD_REQUIRED True)
 set(SOURCES_TARGET1
     main.c
     animations.c
-#    fft.c
+    fft.c
 )
 
 set(SOURCES_TARGET2
     main.c
     animations.c
-#    fft.c
+    fft.c
 )
 
 # Define the first executable target
