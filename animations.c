@@ -2,7 +2,7 @@
 
 extern float amps[50];
 
-void* (*animation[])(void* )  = {animation_bars, animation_sine, animation_fft};
+void* (*animation[])(void* )  = {animation_random, animation_bars, animation_sine, animation_fft};
 
 void*
 animation_sine(void* ){
@@ -20,7 +20,7 @@ animation_sine(void* ){
 				for(row = 0; row < 50;){
 					double sin_amp = sin((double)row*7.2);
 					draw_sine_bar(&sin_amp, row);
-					r -=2;
+					r -=4;
 					g -=6;
 					b -=6;
 					ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
@@ -35,6 +35,37 @@ animation_sine(void* ){
 				ncplane_erase(barsplane);
 		}
 	}
+	ncplane_erase(barsplane);
+	pthread_exit(NULL);
+}
+
+void*
+animation_random(void* ){
+	while(animation_on){
+		double randheight = 0;
+		unsigned r = 250, b = 125, g = 200; //reset to default after every loop
+		ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+		usleep(20000);
+		ncplane_erase(barsplane);
+		for(int i=0;i<50;){
+			/* draw_fft_bar(5,i); */
+			/* randheight = rand() % 4; */
+			randheight = (double) rand() / RAND_MAX;
+			ncplane_printf_yx(stdplane, 0, 0,"rand is: %f", randheight);\
+		/* for(int y= 4; y > randheight; y--){ */
+			r -=4;
+			g -=6;
+			b -=6;
+			ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+			/* ncplane_putwc_yx(barsplane, randheight, i, L'█'); */
+			draw_sine_bar(&randheight,i);
+			/* usleep(20); */
+		/* } */
+		i  = i + 2;
+		}
+	}
+	usleep(200);
+	ncplane_erase(barsplane);
 	pthread_exit(NULL);
 }
 

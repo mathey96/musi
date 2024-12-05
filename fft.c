@@ -61,8 +61,6 @@ void update_vars() {
 
     /* int w = 960; */
     /* int h = 540; */
-    int w = 960;
-    int h = 540;
 
 	fft(values,1, out, 1024);
 		/* fprintf(stderr,"\noutput values:\n " ); */
