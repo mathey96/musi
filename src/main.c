@@ -4,7 +4,6 @@
 #include <assert.h>
 
 #include <stdio.h>
-#define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
 #include "animations.h"
 #include "fft.h"
