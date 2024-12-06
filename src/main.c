@@ -198,25 +198,11 @@ void display_help(struct ncplane* plane){
 
 int resize_cb(struct ncplane* plane){
 	notcurses_stddim_yx(nc, &ystd, &xstd);
-	int x_center = xstd/3 ;
-	int y_center = ystd/3 + 1;
-	int y_center_barsplane = ystd/3 - 4;
-	if( ystd > 15 && xstd > 70){
-		ncplane_move_yx(barplane, y_center, x_center);
-		ncplane_move_yx(barsplane, y_center_barsplane, x_center);
-	}
-	if(xstd < 70 ){
-		ncplane_move_yx(barplane,  y_center, 0);
-		ncplane_move_yx(barsplane, y_center_barsplane, 0);
-	}
-	if( ystd < 15 && xstd > 70){
-		ncplane_move_yx(barplane,  0, x_center);
-		ncplane_move_yx(barsplane, 0, x_center);
-	}
-	if( ystd < 15 && xstd < 70){
-		ncplane_move_yx(plane, 0, 0);
-		ncplane_move_yx(plane, 0, 0);
-	}
+	int x_center = (xstd-50)/2 ;
+	int y_center = ystd/3 + 3;
+	if(xstd < 50) x_center = 0;
+	ncplane_move_yx(barplane, y_center, x_center);
+	ncplane_move_yx(barsplane, y_center - 5, x_center);
 	return 0;
 }
 
@@ -235,8 +221,8 @@ int main(int argc, const char* argv[]) {
     int ystd = 0, xstd = 0;
     notcurses_stddim_yx(nc, &ystd, &xstd);
     struct ncplane_options nopts = {
-    	.y = ystd/3 +1,
-    	.x = xstd/3 +1,
+    	.y = ystd/3 +3,
+    	.x = (xstd-50)/2,
     	.rows = 150,
     	.cols = 150,
     	.name = "plot",
@@ -247,8 +233,8 @@ int main(int argc, const char* argv[]) {
     };
 
 	struct ncplane_options nopts2 = {
-		.y = ystd/3 -4,
-		.x = xstd/3 +1,
+		.y = ystd/3 -2,
+		.x = (xstd-50)/2 ,
 		.rows = 5,
 		.cols = 50,
 		.name = "plot",
