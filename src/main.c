@@ -8,7 +8,7 @@
 #include "animations.h"
 #include "fft.h"
 
-#define FIVE_SEC_IN_FRAME 44100 * 5
+#define FIVE_SEC_IN_FRAME 48000 * 5
 #define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
@@ -20,7 +20,7 @@ ma_uint64 cur_time;
 float current_bar_pos = 0;
 int curr_ms = 0;
 ma_uint64 curr_sec = 0;
-ma_uint64 cursor;
+ma_uint64 cursor = 0;
 int ystd = 0, xstd = 0;
 
 float in[N_FFT];
@@ -35,6 +35,9 @@ typedef enum{
 int display_state = PROGRESS_BAR;
 
 ma_engine engine;
+ma_device device;
+ma_decoder decoder;
+ma_result result;
 
 #define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
@@ -67,20 +70,30 @@ int cur_animation_thread = 0;
 
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
-	memcpy(pOutput, &wav.sample[sampleIndex], (size_t)frameCount * wav.blockAlign);
+	memcpy(pOutput, &wav.sample[sampleIndex], (size_t)frameCount* wav.blockAlign);
+
 	sampleIndex += frameCount;
+
+    ma_decoder* pDecoder = (ma_decoder*)pDevice->pUserData;
+    if (pDecoder == NULL) {
+        return;
+    }
+
+    ma_decoder_read_pcm_frames(&decoder, pOutput, frameCount, NULL);
+    (void)pInput;
 }
 
 void
 display_bar(struct ncplane* n, ma_sound* sound){
 
 	unsigned r = 250, b = 125, g = 200;
-	cur_time = ma_sound_get_time_in_milliseconds(sound);
+	cur_time  = ma_engine_get_time_in_pcm_frames(&engine);
+	cur_time = (float) sampleIndex/(48000)*1000;
 
 	curr_ms = cur_time % 1000;
 	curr_sec = cur_time / 1000;
 
-	current_bar_pos = ((float)curr_sec / (float)total_length_in_sec)*50; // there are 50 horizontal bar characters rendered at the end of the song
+	current_bar_pos = 50* (sampleIndex/48000 ) / total_length_in_sec; // there are 50 horizontal bar characters rendered at the end of the song */
 
 		for(int i=0;i < current_bar_pos; i++){
 			ncplane_set_fg_rgb8_clipped(n, r, g, b);
@@ -121,29 +134,29 @@ handle_input(void* arg){
 			if (paused == false){
 				paused = true;
 				ncplane_erase(barsplane);
-				ma_sound_stop(&sound);
+				ma_device_stop(&device);
+				/* ma_sound_stop(&sound); */
 			}
 			else {
 				paused = false;
 				ncplane_erase(barsplane);
 				ncplane_erase(barplane);
-				ma_sound_start(&sound);
+				ma_device_start(&device);
+				/* ma_sound_start(&sound); */
 			}
 		}
 		if(id == 'k'){
-			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
-				ma_sound_seek_to_pcm_frame(&sound, cursor + FIVE_SEC_IN_FRAME);
+			if(sampleIndex < wav.numSamples - 48000*5)
+				sampleIndex += 48000 * 5;
 		}
 		if(id == 'j'){
-			ma_sound_get_cursor_in_pcm_frames(&sound,&cursor);
-			if( cursor > FIVE_SEC_IN_FRAME){
-				ma_sound_seek_to_pcm_frame(&sound, cursor - FIVE_SEC_IN_FRAME);
-			}
-			else
-				ma_sound_seek_to_pcm_frame(&sound, 0);
+			if(sampleIndex > 48000*5)
+				sampleIndex -= 48000 * 5;
+			else sampleIndex = 0;
 		}
+
 		if(id == 'r'){
-			ma_sound_seek_to_pcm_frame(&sound, 0);
+			sampleIndex = 0;
 		}
 		if(id == 'a'){
 			if(cur_animation_thread < NUM_OF_ANIMATIONS)
@@ -159,16 +172,16 @@ handle_input(void* arg){
 			}
 		}
 		if(id == 'h'){
-		/* 	if(display_state == HELP) */
-		/* 		display_state = PROGRESS_BAR; */
-		/* 	else if(display_state == PROGRESS_BAR) */
-		/* 		display_state = HELP; */
-		/* } */
-			switch(display_state){
-				case PROGRESS_BAR: display_state = HELP;
-				case HELP: display_state = PROGRESS_BAR;
-			}
+			if(display_state == HELP)
+				display_state = PROGRESS_BAR;
+			else if(display_state == PROGRESS_BAR)
+				display_state = HELP;
 		}
+			/* switch(display_state){ */
+			/* 	case PROGRESS_BAR: display_state = HELP; */
+			/* 	case HELP: display_state = PROGRESS_BAR; */
+			/* } */
+		/* } */
 	}
 	return NULL;
 }
@@ -206,7 +219,6 @@ int resize_cb(struct ncplane* plane){
 	}
 	return 0;
 }
-
 
 int main(int argc, const char* argv[]) {
     struct notcurses_options opts = {0}; // man notcurses_init(3)
@@ -249,6 +261,7 @@ int main(int argc, const char* argv[]) {
     barplane = ncplane_create(stdplane, &nopts);
 	barsplane = ncplane_create(stdplane, &nopts2);
 
+	// miniaudio stuff
 	wav.sampleRate = 48000;
 	wav.blockAlign = 4;
 	char musicPath[200] = { "The Music Visualizer - Free Mode" };
@@ -258,10 +271,8 @@ int main(int argc, const char* argv[]) {
 	}
 
     ma_device_config deviceConfig;
-    ma_device device;
-    ma_result result;
-	ma_decoder decoder;
-	ma_decoder_config decoderConfig = ma_decoder_config_init(ma_format_s16, 2, 0);
+	ma_decoder_config decoderConfig = ma_decoder_config_init(ma_format_s16, 2, 48000);
+
 	if (ma_decoder_init_file(musicPath, &decoderConfig, &decoder) != MA_SUCCESS) {
 		printf("Can not open wav music file: %s\n", musicPath);
 	}
@@ -274,8 +285,6 @@ int main(int argc, const char* argv[]) {
 	}
 
 	ma_decoder_get_length_in_pcm_frames(&decoder,&totalFrames);
-	ma_decoder_uninit(&decoder);
-
 
 	playerBufLen = wav.sampleRate * 6;
 	playerBuf = (sample_16b_2ch_t*) malloc(sizeof(sample_16b_2ch_t)*playerBufLen);
@@ -283,11 +292,11 @@ int main(int argc, const char* argv[]) {
 
     // Initialize the Miniaudio device configuration
     deviceConfig = ma_device_config_init(ma_device_type_playback);
-    deviceConfig.playback.format   = ma_format_s16;
-    deviceConfig.playback.channels = wav.numChannels; // Stereo
-    deviceConfig.sampleRate        = wav.sampleRate;
+    deviceConfig.playback.format   = decoder.outputFormat;
+    deviceConfig.playback.channels = decoder.outputChannels;  ; // Stereo
+    deviceConfig.sampleRate        = decoder.outputSampleRate;
     deviceConfig.dataCallback      = data_callback;
-	deviceConfig.pUserData = &wav;
+	deviceConfig.pUserData = &decoder;
 
     // Initialize the audio device
     result = ma_device_init(NULL, &deviceConfig, &device);
@@ -296,11 +305,13 @@ int main(int argc, const char* argv[]) {
     	return -1;
     }
 
+
     // Start the audio device
     result = ma_device_start(&device);
     if (result != MA_SUCCESS) {
     	printf("Failed to start playback device.\n");
     	ma_device_uninit(&device);
+		exit(-1);
     	return -1;
     }
 
@@ -310,7 +321,7 @@ int main(int argc, const char* argv[]) {
 	/* for (int32_t i = 0; i < N_FFT; ++i) { */
 	/* 	if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){ */
 	/* 		values[i] = wav.sample[i + sampleIndex].L / 32768.f ; */
-	/* 		fprintf(stderr,"values[i]: %d\n", wav.sample[i+sampleIndex].L); */
+	/* 		fprintf(stderr,"values[%i]: %d\n",i + sampleIndex, wav.sample[i+sampleIndex].L); */
 	/* 	} */
 	/* 	else{ */
 	/* 		values[i] = 0; */
@@ -326,8 +337,8 @@ int main(int argc, const char* argv[]) {
 
     /* ma_engine_play_sound(&engine, "darkorundek.mp3", NULL); */
 
-	total_length_in_sec = (ma_uint64) totalFrames / 44100;
-    result = ma_sound_init_from_file(&engine, argv[1], MA_SOUND_FLAG_DECODE, NULL, NULL, &sound);
+	total_length_in_sec = (ma_uint64) wav.numSamples / 48000;
+    /* result = ma_sound_init_from_file(&engine, argv[1], MA_SOUND_FLAG_DECODE, NULL, NULL, &sound); */
 
     if (result != MA_SUCCESS) {
         return result;
@@ -338,8 +349,10 @@ int main(int argc, const char* argv[]) {
 	}
 
 	while(thread_done == false){
+		ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor);
 		ncplane_erase(barplane);
 		update_vars();
+
 		if(display_state == PROGRESS_BAR){
 			display_bar(barplane, &sound);
 			}
@@ -347,15 +360,17 @@ int main(int argc, const char* argv[]) {
 			ncplane_erase(barplane);
 			display_help(barplane);
 		}
+
 		notcurses_render(nc);
 	}
 
+	animation_on = 0; // turn off the animation before clearing everything
 	if(pthread_join(thread_id_input, NULL) == 0){
 		notcurses_stop(nc);
 		return 1;
 	}
 
-	ma_sound_uninit(&sound);
+	ma_decoder_uninit(&decoder);
     // Stop and uninitialize the audio device
     ma_device_stop(&device);
     ma_device_uninit(&device);
