@@ -13,8 +13,21 @@
 #define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
-extern volatile sig_atomic_t wakeup_flag;
 
+// globals
+
+extern volatile sig_atomic_t wakeup_flag;
+extern enum animations;
+
+int animation_on = 1;
+static pthread_t thread_id_input;
+static pthread_t thread_animation;
+int cur_animation = 0;
+bool thread_done = false;
+int paused = 0;
+
+
+// time and cursors
 
 ma_uint64 total_length_in_sec = 0;
 ma_uint64 totalFrames = 0;
@@ -22,11 +35,15 @@ ma_uint64 cur_time;
 float current_bar_pos = 0;
 int curr_ms = 0;
 ma_uint64 curr_sec = 0;
-ma_uint64 cursor = 0;
+
+// screen dimensions
 unsigned ystd = 0, xstd = 0;
 
+// fft stuff
+uint32_t sampleIndex = 0;
 float in[N_FFT];
 float complex out[N_FFT];
+float in[N_FFT];
 float amps[50];
 
 typedef enum{
@@ -40,34 +57,15 @@ ma_device device;
 ma_decoder decoder;
 ma_result result;
 
-#define Q_FFT 10
-#define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
-
-float values[N_FFT];  // Initialize complex array
-
-bool freeMode = false;
-sample_16b_2ch_t* playerBuf;
-int32_t playerBufLen;
-int32_t playerBufIndex = 0;
-
-uint32_t sampleIndex = 0;
 wav_t wav;
 
 
+// notcurses
 struct ncplane* stdplane;
 struct ncplane* barplane;
 struct ncplane* barsplane;
 struct notcurses* nc;
 
-bool thread_done = false;
-
-int paused = 0;
-ma_sound sound;
-
-int animation_on = 1;
-static pthread_t thread_id_input;
-static pthread_t thread_animation;
-int cur_animation = 0;
 
 void
 data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -113,7 +111,6 @@ display_bar(struct ncplane* n){
 		ncplane_printf_yx(barplane	, 1,47, "%lld.%lld" ,total_length_in_sec ,total_length_in_sec%1000);
 }
 
-extern enum animations;
 
 static void*
 handle_input(void* arg){
@@ -288,10 +285,6 @@ int main(int argc, const char* argv[]) {
 
 	ma_decoder_get_length_in_pcm_frames(&decoder,&totalFrames);
 
-	playerBufLen = wav.sampleRate * 6;
-	playerBuf = (sample_16b_2ch_t*) malloc(sizeof(sample_16b_2ch_t)*playerBufLen);
-	memset(playerBuf, 0, (size_t)playerBufLen * wav.blockAlign);
-
     // Initialize the Miniaudio device configuration
     deviceConfig = ma_device_config_init(ma_device_type_playback);
     deviceConfig.playback.format   = decoder.outputFormat;
@@ -365,7 +358,6 @@ int main(int argc, const char* argv[]) {
     ma_device_uninit(&device);
 	ma_decoder_uninit(&decoder);
 	free(wav.sample);
-	free(playerBuf);
 
     return 0;
 }
