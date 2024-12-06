@@ -126,7 +126,7 @@ handle_input(void* arg){
 	}
 
 	while((id = notcurses_get_blocking(nc, &ni)) != (uint32_t)-1){
-		if(id == 0){
+		if(ni.evtype == NCTYPE_RELEASE){
 			continue;
 		}
 		if(id == 'q'){
