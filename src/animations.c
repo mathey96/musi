@@ -1,8 +1,15 @@
 #include "animations.h"
+#include <signal.h>
 
 extern float amps[50];
+volatile sig_atomic_t wakeup_flag = 0;
+void signal_handler(int sig) {
+    // Set the flag when the signal is received
+    wakeup_flag = 1;
+}
 
-void* (*animation[])(void* )  = {animation_fft, animation_random, animation_bars, animation_sine };
+
+void* (*animation[])(void* )  = {animation_fft, animation_dots, animation_sine, animation_random};
 
 void*
 animation_sine(void* ){
@@ -63,12 +70,13 @@ animation_random(void* ){
 }
 
 void*
-animation_bars(void* ){
+animation_dots(void* ){
 
 	int i = 4;
 
 	unsigned r = 250, b = 125, g = 200;
 	ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+	signal(SIGUSR1, signal_handler);
 
 	while(animation_on){
 
@@ -79,7 +87,9 @@ animation_bars(void* ){
 				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 			}
 			i--;
-			usleep(200000);
+			if (!wakeup_flag) {
+				usleep(200000);
+			}
 			if(paused == false){// need to check this after every sleep because if we pause playback while this thread is sleeping, the barsplane will will not clear
 			ncplane_putwc_yx(barsplane, i + 1, 0, L'▄');
 			r -=20; g -=35; b -=35;
@@ -87,13 +97,19 @@ animation_bars(void* ){
 			if(i > 1){
 				r -=10; g -=25; b -=25;
 				ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
+
+			if (!wakeup_flag) {
 				usleep(200000);
+			}
 			if(paused == false)
 				ncplane_putwc_yx(barsplane, i + 1, 2, L'▄');
 			}
 			if(i > 2){
 				r -=20; g -=35; b -=35;
+
+			if (!wakeup_flag) {
 				usleep(200000);
+			}
 				if(paused == false)
 				ncplane_putwc_yx(barsplane, i + 1, 4, L'▄');
 			}
@@ -104,10 +120,12 @@ animation_bars(void* ){
 
 			if(animation_on == 0){
 				ncplane_erase(barsplane);
+				wakeup_flag = 0;
 				pthread_exit(NULL);
 
 			}
 		}
+		wakeup_flag = 0;
 		pthread_exit(NULL);
 	}
 }
@@ -186,7 +204,6 @@ animation_fft(void* ){
 		i  = i + 2;
 		}
 	}
-	usleep(200);
 	ncplane_erase(barsplane);
 	pthread_exit(NULL);
 }

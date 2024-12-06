@@ -4,6 +4,7 @@
 #include <assert.h>
 
 #include <stdio.h>
+#include <signal.h>
 #include "miniaudio.h"
 #include "animations.h"
 #include "fft.h"
@@ -12,6 +13,9 @@
 #define Q_FFT 10
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
+extern volatile sig_atomic_t wakeup_flag;
+
+
 ma_uint64 total_length_in_sec = 0;
 ma_uint64 totalFrames = 0;
 ma_uint64 cur_time;
@@ -19,7 +23,7 @@ float current_bar_pos = 0;
 int curr_ms = 0;
 ma_uint64 curr_sec = 0;
 ma_uint64 cursor = 0;
-int ystd = 0, xstd = 0;
+unsigned ystd = 0, xstd = 0;
 
 float in[N_FFT];
 float complex out[N_FFT];
@@ -63,7 +67,7 @@ ma_sound sound;
 int animation_on = 1;
 static pthread_t thread_id_input;
 static pthread_t thread_animation;
-int cur_animation_thread = 0;
+int cur_animation = 0;
 
 void
 data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
@@ -88,7 +92,7 @@ data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 f
 }
 
 void
-display_bar(struct ncplane* n, ma_sound* sound){
+display_bar(struct ncplane* n){
 
 	unsigned r = 250, b = 125, g = 200;
 	cur_time = (float) sampleIndex/(48000)*1000;
@@ -108,6 +112,8 @@ display_bar(struct ncplane* n, ma_sound* sound){
 		ncplane_printf_yx(barplane	, 1, 0, "%lld.%d" ,curr_sec,curr_ms);
 		ncplane_printf_yx(barplane	, 1,47, "%lld.%lld" ,total_length_in_sec ,total_length_in_sec%1000);
 }
+
+extern enum animations;
 
 static void*
 handle_input(void* arg){
@@ -162,15 +168,16 @@ handle_input(void* arg){
 			sampleIndex = 0;
 		}
 		if(id == 'a'){
-			if(cur_animation_thread < NUM_OF_ANIMATIONS)
-				cur_animation_thread ++;
-			if(cur_animation_thread == NUM_OF_ANIMATIONS) cur_animation_thread = 0;
+			if(cur_animation == ANIMATION_DOTS){ wakeup_flag = 1;
+			    pthread_kill(thread_animation, SIGUSR1);}
+			if(cur_animation < NUM_OF_ANIMATIONS) cur_animation ++;
+			if(cur_animation == NUM_OF_ANIMATIONS) cur_animation = 0;
 			animation_on = 0;
 			if(pthread_join(thread_animation, NULL) != 0){
 				notcurses_stop(nc);
 			}
 			animation_on = 1;
-			if(pthread_create(&thread_animation, NULL, animation[cur_animation_thread], nc)){
+			if(pthread_create(&thread_animation, NULL, animation[cur_animation], nc)){
 				exit(-1);
 			}
 		}
@@ -206,7 +213,7 @@ void display_help(struct ncplane* plane){
 	ncplane_putstr_yx(plane, 7, 1, "q - exit application");
 };
 
-int resize_cb(struct ncplane* plane){
+int resize_cb(){
 	notcurses_stddim_yx(nc, &ystd, &xstd);
 	int x_center = (xstd-50)/2 ;
 	int y_center = ystd/3 + 3;
@@ -228,7 +235,6 @@ int main(int argc, const char* argv[]) {
     }
     stdplane = notcurses_stdplane(nc);
 
-    int ystd = 0, xstd = 0;
     notcurses_stddim_yx(nc, &ystd, &xstd);
     struct ncplane_options nopts = {
     	.y = ystd/3 +3,
@@ -339,7 +345,7 @@ int main(int argc, const char* argv[]) {
 		update_vars();
 
 		if(display_state == PROGRESS_BAR){
-			display_bar(barplane, &sound);
+			display_bar(barplane);
 		}
 		if(display_state == HELP){
 			ncplane_erase(barplane);
