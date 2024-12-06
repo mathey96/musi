@@ -13,8 +13,6 @@
 #define N_FFT (1 << Q_FFT)	/* N-point FFT, iFFT */
 
 ma_uint64 total_length_in_sec = 0;
-ma_uint64 total_length_in_min = 0;
-ma_uint64 total_length_in_sec_curr_min = 0;
 ma_uint64 totalFrames = 0;
 ma_uint64 cur_time;
 float current_bar_pos = 0;
@@ -34,7 +32,6 @@ typedef enum{
 
 int display_state = PROGRESS_BAR;
 
-ma_engine engine;
 ma_device device;
 ma_decoder decoder;
 ma_result result;
@@ -68,8 +65,14 @@ static pthread_t thread_id_input;
 static pthread_t thread_animation;
 int cur_animation_thread = 0;
 
-void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
+void
+data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
+	if( sampleIndex > wav.numSamples){
+		thread_done = true;
+		animation_on = 0;
+	}
+	else{
 	memcpy(pOutput, &wav.sample[sampleIndex], (size_t)frameCount* wav.blockAlign);
 
 	sampleIndex += frameCount;
@@ -81,13 +84,13 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 
     ma_decoder_read_pcm_frames(&decoder, pOutput, frameCount, NULL);
     (void)pInput;
+	}
 }
 
 void
 display_bar(struct ncplane* n, ma_sound* sound){
 
 	unsigned r = 250, b = 125, g = 200;
-	cur_time  = ma_engine_get_time_in_pcm_frames(&engine);
 	cur_time = (float) sampleIndex/(48000)*1000;
 
 	curr_ms = cur_time % 1000;
@@ -182,6 +185,13 @@ handle_input(void* arg){
 			/* 	case HELP: display_state = PROGRESS_BAR; */
 			/* } */
 		/* } */
+		if(animation_on == 0){
+			if(pthread_join(thread_animation, NULL) != 0){
+				fprintf(stderr, "unsuccessful exit from animation thread\n");
+				pthread_exit(NULL);
+			}
+		}
+
 	}
 	return NULL;
 }
@@ -211,7 +221,7 @@ int main(int argc, const char* argv[]) {
 	if(argc < 2){
 		fprintf(stderr,"provide an input file\n");
 		exit(-1);
-		}
+	}
     nc = notcurses_init(&opts, stdout);
     if(nc == NULL){
     	return EXIT_FAILURE;
@@ -301,8 +311,6 @@ int main(int argc, const char* argv[]) {
     	return -1;
     }
 
-    ma_engine_config engineConfig;
-
 	/* while(1){ */
 	/* for (int32_t i = 0; i < N_FFT; ++i) { */
 	/* 	if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){ */
@@ -316,15 +324,7 @@ int main(int argc, const char* argv[]) {
 	/* } */
 	/* } */
 
-
-    engineConfig = ma_engine_config_init();
-    /* engineConfig.pResourceManager = &myCustomResourceManager;   // <-- Initialized as some earlier stage. */
-    result = ma_engine_init(&engineConfig, &engine);
-
-    /* ma_engine_play_sound(&engine, "darkorundek.mp3", NULL); */
-
 	total_length_in_sec = (ma_uint64) wav.numSamples / 48000;
-    /* result = ma_sound_init_from_file(&engine, argv[1], MA_SOUND_FLAG_DECODE, NULL, NULL, &sound); */
 
     if (result != MA_SUCCESS) {
         return result;
@@ -335,13 +335,12 @@ int main(int argc, const char* argv[]) {
 	}
 
 	while(thread_done == false){
-		ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor);
 		ncplane_erase(barplane);
 		update_vars();
 
 		if(display_state == PROGRESS_BAR){
 			display_bar(barplane, &sound);
-			}
+		}
 		if(display_state == HELP){
 			ncplane_erase(barplane);
 			display_help(barplane);
@@ -356,10 +355,11 @@ int main(int argc, const char* argv[]) {
 		return 1;
 	}
 
-	ma_decoder_uninit(&decoder);
-    // Stop and uninitialize the audio device
     ma_device_stop(&device);
     ma_device_uninit(&device);
+	ma_decoder_uninit(&decoder);
+	free(wav.sample);
+	free(playerBuf);
 
     return 0;
 }
