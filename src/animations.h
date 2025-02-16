@@ -6,7 +6,7 @@
 
 #define NUM_OF_ANIMATIONS 4
 
-enum animations{
+enum animations {
 	ANIMATION_FFT = 0,
 	ANIMATION_DOTS,
 	ANIMATION_SINE,

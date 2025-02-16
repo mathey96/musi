@@ -17,7 +17,7 @@
 // globals
 
 extern volatile sig_atomic_t wakeup_flag;
-extern enum animations;
+enum animations;
 
 int animation_on = 1;
 static pthread_t thread_id_input;
@@ -335,7 +335,7 @@ int main(int argc, const char* argv[]) {
 
 	while(thread_done == false){
 		ncplane_erase(barplane);
-		update_vars();
+		update_amps();
 
 		if(display_state == PROGRESS_BAR){
 			display_bar(barplane);

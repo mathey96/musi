@@ -5,12 +5,13 @@
 #include "miniaudio.h"
 
 #define N 1024
+#define Ncol 50 // number of columns
 
 extern uint32_t sampleIndex;
 extern float in[N];  // Initialize complex array
 extern float complex out[N];
 extern wav_t wav;
-extern float amps[50]; // final vector of values to be rendered
+extern float amps[Ncol]; // final vector of values to be rendered
 
 float pi = 0;
 
@@ -46,10 +47,10 @@ float amp(float complex z)
     return a;
 }
 
-void update_vars() {
+void update_amps() {
 	/* fprintf(stderr," \ninput values:\n"); */
 	for (int32_t i = 0; i < 1024; ++i) {
-		if (i + sampleIndex >= 0 && i + sampleIndex < wav.numSamples){
+		if ( i + sampleIndex < wav.numSamples){
 			in[i] = (float) wav.sample[i + sampleIndex].L/32768.f;
 		}
 		else{

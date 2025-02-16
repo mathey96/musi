@@ -22,4 +22,4 @@ typedef struct {
 } wav_t;   // struct and some code in this commit is taken from https://github.com/RoboBachelor/Music-Visualizer-Piano
 
 void fft(float in[], size_t stride, float complex out[], size_t n);
-void update_vars();
+void update_amps();

@@ -3,7 +3,7 @@
 
 extern float amps[50];
 volatile sig_atomic_t wakeup_flag = 0;
-void signal_handler(int sig) {
+void signal_handler() {
     // Set the flag when the signal is received
     wakeup_flag = 1;
 }
@@ -189,13 +189,11 @@ draw_fft_bar(float* amplitude,int row){
 void*
 animation_fft(void* ){
 	while(animation_on){
-		double randheight = 0;
 		unsigned r = 250, b = 125, g = 200; //reset to default after every loop
 		ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
 		usleep(20000);
 		ncplane_erase(barsplane);
 		for(int i=0;i<50;){
-			randheight = (double) rand() / RAND_MAX;
 			r -=4;
 			g -=6;
 			b -=6;
