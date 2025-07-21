@@ -20,11 +20,11 @@ extern struct ncplane* barsplane;
 extern int animation_on;
 extern int paused;
 
-void* animation_fft(void* );
-void* animation_dots(void* );
-void* animation_sine(void* );
-void* animation_random(void* );
-void draw_sine_bar(double* amplitude,int row);
+static void* animation_fft(void* );
+static void* animation_dots(void* );
+static void* animation_sine(void* );
+static void* animation_random(void* );
+static void draw_sine_bar(double* amplitude,int row);
 
 extern void* (*animation[NUM_OF_ANIMATIONS])(void*);
 

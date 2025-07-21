@@ -11,7 +11,7 @@ void signal_handler() {
 
 void* (*animation[])(void* )  = {animation_fft, animation_dots, animation_sine, animation_random};
 
-void*
+static void*
 animation_sine(void* ){
 
 	unsigned r = 250, b = 125, g = 200;
@@ -46,21 +46,29 @@ animation_sine(void* ){
 	pthread_exit(NULL);
 }
 
-void*
+static void*
 animation_random(void* ){
 	while(animation_on){
 		double randheight = 0;
 		unsigned r = 250, b = 125, g = 200; //reset to default after every loop
 		ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-		usleep(20000);
+		usleep(70000);
 		ncplane_erase(barsplane);
+		static double randheights[25];
 		for(int i=0;i<50;){
-			randheight = (double) rand() / RAND_MAX;
 			r -=4;
 			g -=6;
 			b -=6;
 			ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-			draw_sine_bar(&randheight,i);
+			if(paused == false){
+				randheight = (double) rand() / RAND_MAX;
+				randheights[(int)i/2] = randheight;
+				draw_sine_bar(&randheight,i);
+			}
+			else{
+				draw_sine_bar(&randheights[i/2],i);
+			}
+
 		i  = i + 2;
 		}
 	}
@@ -69,7 +77,7 @@ animation_random(void* ){
 	pthread_exit(NULL);
 }
 
-void*
+static void*
 animation_dots(void* ){
 
 	int i = 4;
@@ -80,7 +88,6 @@ animation_dots(void* ){
 
 	while(animation_on){
 
-		while(paused == false){
 
 			if(i == 4){
 				r = 250, b = 125, g = 200; //reset to default after every loop
@@ -110,7 +117,7 @@ animation_dots(void* ){
 			if (!wakeup_flag) {
 				usleep(200000);
 			}
-				if(paused == false)
+			if(paused == false)
 				ncplane_putwc_yx(barsplane, i + 1, 4, L'▄');
 			}
 			if(i == 0){
@@ -128,9 +135,8 @@ animation_dots(void* ){
 		wakeup_flag = 0;
 		pthread_exit(NULL);
 	}
-}
 
-void
+static void
 draw_sine_bar(double* amplitude,int row){
 	int height = 4;
 	if (*amplitude < 0) {
@@ -157,7 +163,7 @@ draw_sine_bar(double* amplitude,int row){
 	}
 }
 
-void
+static void
 draw_fft_bar(float* amplitude,int row){
 	int height = 4;
 	if (*amplitude < 0) {
@@ -191,7 +197,7 @@ animation_fft(void* ){
 	while(animation_on){
 		unsigned r = 250, b = 125, g = 200; //reset to default after every loop
 		ncplane_set_fg_rgb8_clipped(barsplane, r, g, b);
-		usleep(20000);
+		usleep(70000);
 		ncplane_erase(barsplane);
 		for(int i=0;i<50;){
 			r -=4;
